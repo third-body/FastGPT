@@ -26,6 +26,8 @@ import type {
   InvitationType
 } from '@fastgpt/service/support/user/team/invitationLink/type';
 import type { PermissionValueType } from '@fastgpt/global/support/permission/type';
+import { hashStr } from '@fastgpt/global/common/string/tools';
+import type { CreateTeamMemberResponseType } from '@fastgpt/global/openapi/support/user/team/member/api';
 
 /* --------------- team  ---------------- */
 export const getTeamList = (status: `${TeamMemberSchema['status']}`) =>
@@ -68,6 +70,27 @@ export const updateInviteResult = (data: UpdateInviteProps) =>
 export const postRestoreMember = (tmbId: string) =>
   POST('/proApi/support/user/team/member/restore', { tmbId });
 export const delLeaveTeam = () => DELETE('/proApi/support/user/team/member/leave');
+
+/**
+ * 开源版：管理员直接创建成员账号并加入当前团队。
+ * 密码需与登录接口保持一致，先经 hashStr 处理再提交，服务端不会二次哈希。
+ */
+export const postCreateMember = (data: {
+  username: string;
+  password: string;
+  memberName?: string;
+}) =>
+  POST<CreateTeamMemberResponseType>('/proApi/support/user/team/member/create', {
+    ...data,
+    password: hashStr(data.password)
+  });
+
+/** 开源版：管理员重置成员登录密码，成功后该成员全部会话会被强制下线。 */
+export const putResetMemberPassword = (tmbId: string, password: string) =>
+  PUT('/proApi/support/user/team/member/resetPassword', {
+    tmbId,
+    password: hashStr(password)
+  });
 
 /* -------------- team invitaionlink -------------------- */
 

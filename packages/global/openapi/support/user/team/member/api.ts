@@ -5,6 +5,10 @@ import { GroupMemberRole } from '../../../../../support/permission/memberGroup/c
 import { PermissionSchema } from '../../../../../support/permission/controller';
 import { TeamMemberStatusEnum } from '../../../../../support/user/team/constant';
 import { PaginationResponseSchema, PaginationSchema } from '../../../../api';
+import {
+  AccountPasswordSchema,
+  AccountUsernameSchema
+} from '../../../../../support/user/account/verification/type';
 
 const TeamMemberIdSchema = ObjectIdSchema.meta({
   example: '68ad85a7463006c963799a06',
@@ -198,3 +202,49 @@ export const UpdateTeamMemberNameByManagerBodySchema = z.object({
 export type UpdateTeamMemberNameByManagerBodyType = z.infer<
   typeof UpdateTeamMemberNameByManagerBodySchema
 >;
+
+/* ============================================================================
+ * API: 创建团队成员账号（开源版）
+ * Route: POST /api/proApi/support/user/team/member/create
+ * Method: POST
+ * Description: 管理员直接创建一个用户账号，并将其加入当前团队。开源版在未配置商业版
+ *   服务时用于替代邀请链接流程；配置了商业版时该路由仍转发给商业版。
+ * Tags: ['成员管理', '团队管理', 'Write']
+ * ============================================================================ */
+
+export const CreateTeamMemberBodySchema = z.object({
+  username: AccountUsernameSchema.meta({
+    example: 'zhangsan',
+    description: '登录用户名，全局唯一'
+  }),
+  password: AccountPasswordSchema.meta({
+    description: '初始登录密码。与登录接口一致，需由客户端先用 hashStr 处理后再提交'
+  }),
+  memberName: z.string().trim().min(1).max(50).optional().meta({
+    example: '张三',
+    description: '在团队中显示的成员名称，缺省时取 username'
+  })
+});
+export type CreateTeamMemberBodyType = z.infer<typeof CreateTeamMemberBodySchema>;
+
+export const CreateTeamMemberResponseSchema = z.object({
+  tmbId: TeamMemberIdSchema,
+  userId: ObjectIdSchema.meta({ description: '新建用户的 ID' })
+});
+export type CreateTeamMemberResponseType = z.infer<typeof CreateTeamMemberResponseSchema>;
+
+/* ============================================================================
+ * API: 重置团队成员密码（开源版）
+ * Route: PUT /api/proApi/support/user/team/member/resetPassword
+ * Method: PUT
+ * Description: 管理员重置指定团队成员的登录密码，并强制该用户全部会话下线。
+ * Tags: ['成员管理', '团队管理', 'Write']
+ * ============================================================================ */
+
+export const ResetTeamMemberPasswordBodySchema = z.object({
+  tmbId: TeamMemberIdSchema.meta({ description: '需要重置密码的团队成员 ID' }),
+  password: AccountPasswordSchema.meta({
+    description: '新的登录密码。与登录接口一致，需由客户端先用 hashStr 处理后再提交'
+  })
+});
+export type ResetTeamMemberPasswordBodyType = z.infer<typeof ResetTeamMemberPasswordBodySchema>;

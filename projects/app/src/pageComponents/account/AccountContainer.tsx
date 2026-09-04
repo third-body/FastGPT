@@ -48,13 +48,15 @@ const AccountContainer = ({
       label: t('account:personal_information'),
       value: TabEnum.info
     },
+    // 团队页在开源版也可用（成员管理由开源实现提供），故不再受 isPlus 限制；
+    // 使用记录仍是商业版能力，保持原有 isPlus 条件。
+    {
+      icon: 'support/user/usersLight',
+      label: t('account:team'),
+      value: TabEnum.team
+    },
     ...(feConfigs?.isPlus
       ? [
-          {
-            icon: 'support/user/usersLight',
-            label: t('account:team'),
-            value: TabEnum.team
-          },
           {
             icon: 'support/usage/usageRecordLight',
             label: t('account:usage_records'),

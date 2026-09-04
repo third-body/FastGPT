@@ -51,6 +51,8 @@ import PopoverConfirm from '@fastgpt/web/components/common/MyPopover/PopoverConf
 import MyIconButton from '@fastgpt/web/components/common/Icon/button';
 
 const InviteModal = dynamic(() => import('./Invite/InviteModal'));
+const AddMemberModal = dynamic(() => import('./AddMemberModal'));
+const ResetPasswordModal = dynamic(() => import('./ResetPasswordModal'));
 const TransferOwnershipModal = dynamic(() => import('./TransferOwnershipModal'));
 function MemberTable({ Tabs }: { Tabs: React.ReactNode }) {
   const { t } = useClientTranslation(['account_team', 'user']);
@@ -89,6 +91,22 @@ function MemberTable({ Tabs }: { Tabs: React.ReactNode }) {
   const isWecomTeam = useMemo(() => {
     return !!userInfo?.team?.isWecomTeam;
   }, [userInfo?.team?.isWecomTeam]);
+
+  /**
+   * 开源模式：未接商业版服务。
+   * 此时没有邮箱/短信通道，邀请链接流程不可用，改为管理员直接建号并可重置密码。
+   */
+  const isOpenSourceMode = !feConfigs?.isPlus;
+
+  const {
+    isOpen: isOpenAddMember,
+    onOpen: onOpenAddMember,
+    onClose: onCloseAddMember
+  } = useDisclosure();
+  const [resetPasswordTarget, setResetPasswordTarget] = useState<{
+    tmbId: string;
+    memberName: string;
+  }>();
 
   const {
     isOpen: isOpenTransferModal,
@@ -227,10 +245,18 @@ function MemberTable({ Tabs }: { Tabs: React.ReactNode }) {
               variant={'primary'}
               size="md"
               borderRadius={'md'}
-              leftIcon={<MyIcon name="common/inviteLight" w={'16px'} color={'white'} />}
-              onClick={onOpenInvite}
+              leftIcon={
+                <MyIcon
+                  name={isOpenSourceMode ? 'common/addLight' : 'common/inviteLight'}
+                  w={'16px'}
+                  color={'white'}
+                />
+              }
+              onClick={isOpenSourceMode ? onOpenAddMember : onOpenInvite}
             >
-              {t('account_team:user_team_invite_member')}
+              {isOpenSourceMode
+                ? t('account_team:add_member')
+                : t('account_team:user_team_invite_member')}
             </Button>
           )}
           {userInfo?.team.permission.isOwner && !isSyncMode && isWecomTeam && (
@@ -261,26 +287,33 @@ function MemberTable({ Tabs }: { Tabs: React.ReactNode }) {
               {t('account_team:export_members')}
             </Button>
           )}
-          {!userInfo?.team.permission.isOwner && !isSyncMode && !isWecomTeam && (
-            <Box w={['100%', 'auto']}>
-              <PopoverConfirm
-                Trigger={
-                  <Button
-                    w={'100%'}
-                    variant={'whitePrimary'}
-                    size="md"
-                    borderRadius={'md'}
-                    leftIcon={<MyIcon name={'support/account/loginoutLight'} w={'14px'} />}
-                  >
-                    {t('account_team:user_team_leave_team')}
-                  </Button>
-                }
-                type="delete"
-                content={t('account_team:confirm_leave_team')}
-                onConfirm={() => onLeaveTeam()}
-              />
-            </Box>
-          )}
+          {/*
+            开源单团队模式下隐藏「离开团队」：全系统只有一个团队，
+            退出后既无其它团队可切换，切换团队接口也未实现，用户会被锁在外面。
+          */}
+          {!userInfo?.team.permission.isOwner &&
+            !isSyncMode &&
+            !isWecomTeam &&
+            !isOpenSourceMode && (
+              <Box w={['100%', 'auto']}>
+                <PopoverConfirm
+                  Trigger={
+                    <Button
+                      w={'100%'}
+                      variant={'whitePrimary'}
+                      size="md"
+                      borderRadius={'md'}
+                      leftIcon={<MyIcon name={'support/account/loginoutLight'} w={'14px'} />}
+                    >
+                      {t('account_team:user_team_leave_team')}
+                    </Button>
+                  }
+                  type="delete"
+                  content={t('account_team:confirm_leave_team')}
+                  onConfirm={() => onLeaveTeam()}
+                />
+              </Box>
+            )}
         </Flex>
       </Flex>
 
@@ -349,6 +382,20 @@ function MemberTable({ Tabs }: { Tabs: React.ReactNode }) {
                               hoverColor={'blue.500'}
                               onClick={() => handleEditMemberName(member.tmbId, member.memberName)}
                             />
+                            {isOpenSourceMode && (
+                              <MyIconButton
+                                icon={'key'}
+                                size="1rem"
+                                hoverColor={'blue.500'}
+                                tip={t('account_team:reset_password')}
+                                onClick={() =>
+                                  setResetPasswordTarget({
+                                    tmbId: member.tmbId,
+                                    memberName: member.memberName
+                                  })
+                                }
+                              />
+                            )}
                             <PopoverConfirm
                               Trigger={
                                 <Box>
@@ -402,6 +449,17 @@ function MemberTable({ Tabs }: { Tabs: React.ReactNode }) {
       </MyBox>
 
       {isOpenInvite && userInfo?.team?.teamId && <InviteModal onClose={onCloseInvite} />}
+      {isOpenAddMember && (
+        <AddMemberModal onClose={onCloseAddMember} onSuccess={onRefreshMembers} />
+      )}
+      {resetPasswordTarget && (
+        <ResetPasswordModal
+          tmbId={resetPasswordTarget.tmbId}
+          memberName={resetPasswordTarget.memberName}
+          onClose={() => setResetPasswordTarget(undefined)}
+          onSuccess={onRefreshMembers}
+        />
+      )}
       {isOpenTransferModal && (
         <TransferOwnershipModal
           onClose={onCloseTransferModal}

@@ -10,6 +10,7 @@ import { useRouter } from 'next/router';
 import FillRowTabs from '@fastgpt/web/components/common/Tabs/FillRowTabs';
 import MyIcon from '@fastgpt/web/components/common/Icon';
 import { TeamMemberRoleEnum } from '@fastgpt/global/support/user/team/constant';
+import { DEFAULT_TEAM_AVATAR } from '@fastgpt/global/common/system/constants';
 import { TeamContext, TeamModalContextProvider } from '@/pageComponents/account/team/context';
 import dynamic from 'next/dynamic';
 import { useSystemStore } from '@/web/common/system/useSystemStore';
@@ -53,7 +54,9 @@ const Team = () => {
   const { userInfo, teamPlanStatus } = useUserStore();
   const standardPlan = teamPlanStatus?.standard;
   const level = standardPlan?.currentSubLevel;
-  const { subPlans } = useSystemStore();
+  const { subPlans, feConfigs } = useSystemStore();
+  // 与后端 authSystemAdmin 一致：只有系统管理员能创建团队
+  const isRoot = userInfo?.username === 'root';
   const planContent = useMemo(() => {
     const plan = level !== undefined ? subPlans?.standard?.[level] : undefined;
     if (!plan) return;
@@ -73,11 +76,18 @@ const Team = () => {
         scrollPositionKey={'account-team-tabs'}
         list={[
           { label: t('account_team:member'), value: TeamTabEnum.member },
-          { label: t('account_team:org'), value: TeamTabEnum.org },
-          { label: t('account_team:group'), value: TeamTabEnum.group },
+          // 权限管理与审计日志在开源版已实现，始终显示（审计日志仅管理员可见）；
+          // 组织架构/成员组的增删改仍是商业版能力，开源模式下隐藏入口，
+          // 避免点进去只看到报错。
           { label: t('account_team:permission'), value: TeamTabEnum.permission },
           ...(userInfo?.team.permission.hasManagePer
             ? [{ label: t('account_team:audit_log'), value: TeamTabEnum.audit }]
+            : []),
+          ...(feConfigs?.isPlus
+            ? [
+                { label: t('account_team:org'), value: TeamTabEnum.org },
+                { label: t('account_team:group'), value: TeamTabEnum.group }
+              ]
             : [])
         ]}
         value={teamTab}
@@ -98,7 +108,15 @@ const Team = () => {
         }}
       />
     ),
-    [planContent, router, t, teamTab, toast, userInfo?.team.permission.hasManagePer]
+    [
+      feConfigs?.isPlus,
+      planContent,
+      router,
+      t,
+      teamTab,
+      toast,
+      userInfo?.team.permission.hasManagePer
+    ]
   );
 
   return (
@@ -123,6 +141,22 @@ const Team = () => {
             <Flex align={'center'} ml={[0, 6]}>
               <TeamSelector height={'34px'} />
             </Flex>
+            {/*
+              创建团队：不传 id 即为创建模式（EditInfoModal 按 defaultData.id 区分创建/编辑）。
+              仅 root 可见，与后端 authSystemAdmin 校验保持一致。
+              商业版把入口放在 TeamSelector 下拉里，这里放在页头，避免改动被多处复用的 TeamSelector。
+            */}
+            {isRoot && (
+              <Flex align={'center'} justify={'center'} ml={2} p={'0.44rem'}>
+                <MyIcon
+                  name="common/addLight"
+                  w="18px"
+                  cursor="pointer"
+                  _hover={{ color: 'primary.500' }}
+                  onClick={() => setEditTeamData({ name: '', avatar: DEFAULT_TEAM_AVATAR })}
+                />
+              </Flex>
+            )}
             {userInfo?.team?.role === TeamMemberRoleEnum.owner && (
               <Flex align={'center'} justify={'center'} ml={2} p={'0.44rem'}>
                 <MyIcon

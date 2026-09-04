@@ -16,7 +16,6 @@ import dynamic from 'next/dynamic';
 
 import MemberListCard, { type MemberListCardProps } from './MemberListCard';
 import { useRequest } from '@fastgpt/web/hooks/useRequest';
-import { useSystemStore } from '@/web/common/system/useSystemStore';
 import type { RequireOnlyOne } from '@fastgpt/global/common/type/utils';
 import { useClientTranslation } from '@fastgpt/web/i18n/useClientTranslation';
 import { CommonRoleList, NullRoleVal } from '@fastgpt/global/support/permission/constant';
@@ -112,8 +111,6 @@ const CollaboratorContextProvider = ({
     }
   };
 
-  const { feConfigs } = useSystemStore();
-
   const {
     data: { clbs: collaboratorList = [], parentClbs: parentClbList = [] } = {
       clbs: [],
@@ -123,22 +120,19 @@ const CollaboratorContextProvider = ({
     loading: isFetchingCollaborator
   } = useRequest(
     async () => {
-      if (feConfigs.isPlus) {
-        const { clbs, parentClbs = [] } = await onGetCollaboratorList();
-        return {
-          clbs: clbs.map((clb) => ({
-            ...clb,
-            permission: new Permission({ role: clb.permission.role })
-          })),
-          parentClbs: parentClbs.map((clb) => ({
-            ...clb,
-            permission: new Permission({ role: clb.permission.role })
-          }))
-        };
-      }
+      // 协作者列表接口在开源版已实现（团队/应用/知识库三处共用本 Context），
+      // 故不再按 isPlus 短路返回空数组——否则权限写入成功但列表永远为空、
+      // 重新打开弹窗也不回显已有权限。
+      const { clbs, parentClbs = [] } = await onGetCollaboratorList();
       return {
-        clbs: [],
-        parentClbs: []
+        clbs: clbs.map((clb) => ({
+          ...clb,
+          permission: new Permission({ role: clb.permission.role })
+        })),
+        parentClbs: parentClbs.map((clb) => ({
+          ...clb,
+          permission: new Permission({ role: clb.permission.role })
+        }))
       };
     },
     {
@@ -192,7 +186,10 @@ const CollaboratorContextProvider = ({
         isOwner: userInfo?.team.permission.isOwner
       })
     );
-  }, [collaboratorList, userInfo?.team.permission.isOwner, userInfo?.team?.tmbId]);
+    // 依赖取 userInfo?.team 而非其下的两个具体属性：React Compiler 推断的依赖是
+    // userInfo?.team，与手写的更细粒度依赖不一致时会放弃优化并报
+    // preserve-manual-memoization 错误。
+  }, [collaboratorList, userInfo?.team]);
 
   const contextValue = {
     permission,

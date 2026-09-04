@@ -304,6 +304,35 @@ export const GetTeamListResponseSchema = z.array(TeamListItemSchema).meta({
 export type GetTeamListResponseType = z.infer<typeof GetTeamListResponseSchema>;
 
 /* ============================================================================
+ * API: 创建团队
+ * Route: POST /api/proApi/support/user/team/create
+ * Method: POST
+ * Description: 为当前用户创建一个新团队，创建者自动成为该团队所有者。
+ * Tags: ['团队管理', 'Write']
+ * ============================================================================ */
+
+export const CreateTeamBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(100).meta({
+      example: '研发团队',
+      description: '团队名称'
+    }),
+    avatar: z.string().optional().meta({ description: '团队头像' }),
+    memberName: z.string().trim().min(1).max(50).optional().meta({
+      example: '张三',
+      description: '创建者在该团队中的成员名称，缺省为 Owner'
+    })
+  })
+  .meta({ example: { name: '研发团队' } });
+export type CreateTeamBodyType = z.infer<typeof CreateTeamBodySchema>;
+
+export const CreateTeamResponseSchema = z.string().meta({
+  example: '68ad85a7463006c963799a06',
+  description: '新建团队的 ID'
+});
+export type CreateTeamResponseType = z.infer<typeof CreateTeamResponseSchema>;
+
+/* ============================================================================
  * API: 切换当前团队
  * Route: PUT /api/proApi/support/user/team/switch
  * Method: PUT

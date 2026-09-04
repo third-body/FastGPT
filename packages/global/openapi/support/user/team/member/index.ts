@@ -1,11 +1,14 @@
 import type { OpenAPIPath } from '../../../../type';
 import { DevApiTagsMap } from '../../../../tag';
 import {
+  CreateTeamMemberBodySchema,
+  CreateTeamMemberResponseSchema,
   DeleteTeamMemberQuerySchema,
   ExportTeamMembersResponseSchema,
   GetTeamMemberCountResponseSchema,
   ListTeamMembersBodySchema,
   ListTeamMembersResponseSchema,
+  ResetTeamMemberPasswordBodySchema,
   RestoreTeamMemberBodySchema,
   UpdateTeamMemberInviteBodySchema,
   UpdateTeamMemberNameBodySchema,
@@ -15,6 +18,50 @@ import {
 const TeamMemberTags = [DevApiTagsMap.teamMember];
 
 export const TeamMemberPath: OpenAPIPath = {
+  '/proApi/support/user/team/member/create': {
+    post: {
+      summary: '创建团队成员账号',
+      description:
+        '管理员直接创建用户账号并加入当前团队。开源版用于替代邀请链接流程；配置商业版时转发给商业版',
+      tags: [...TeamMemberTags],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: CreateTeamMemberBodySchema
+          }
+        }
+      },
+      responses: {
+        200: {
+          description: '成员账号创建成功',
+          content: {
+            'application/json': {
+              schema: CreateTeamMemberResponseSchema
+            }
+          }
+        }
+      }
+    }
+  },
+  '/proApi/support/user/team/member/resetPassword': {
+    put: {
+      summary: '重置团队成员密码',
+      description: '管理员重置指定团队成员的登录密码，并强制该用户全部会话下线',
+      tags: [...TeamMemberTags],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: ResetTeamMemberPasswordBodySchema
+          }
+        }
+      },
+      responses: {
+        200: {
+          description: '密码重置成功'
+        }
+      }
+    }
+  },
   '/proApi/support/user/team/member/count': {
     get: {
       summary: '获取团队成员数量',
