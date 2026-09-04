@@ -1,0 +1,34 @@
+# FastGPT 升级工具配置示例
+# 复制为 fastgpt-upgrade.conf 并按实际环境修改。脚本本身无需改动。
+# 注意：本文件含数据库密码，请勿提交到版本库。
+
+# ---- compose ----
+COMPOSE_FILE="/opt/fastgpt/docker-compose.yml"
+COMPOSE_PROJECT="fastgpt"
+
+# ---- 备份 ----
+BACKUP_ROOT="/data/fastgpt-backup"
+
+# ---- 健康检查 ----
+APP_HEALTH_URL="https://fastgpt.example.com/api/common/system/getInitData"
+
+# ---- 构建（拉现成镜像可留空）----
+SRC_DIR=""
+IMAGE_TAG=""
+
+# ---- compose 里的服务名（不是容器名）----
+SVC_APP="fastgpt-app"
+SVC_MONGO="fastgpt-mongo"
+SVC_VECTOR="fastgpt-vector"
+SVC_MINIO="fastgpt-minio"
+SVC_AIPROXY_PG="fastgpt-aiproxy-pg"
+
+# ---- 数据库凭证，须与 compose 中一致 ----
+MONGO_USER="myusername"
+MONGO_PSW="mypassword"
+MONGO_DBS="fastgpt fastgpt-plugin"
+PGV_USER="username"
+PGA_USER="postgres"
+
+# MinIO 数据在容器内的挂载点
+MINIO_DATA_PATH="/data"
