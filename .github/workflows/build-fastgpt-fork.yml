@@ -1,0 +1,103 @@
+# Fork 专用的 FastGPT 镜像构建
+#
+# 与官方 build-fastgpt.yml 的区别：
+# - 只推 GitHub Container Registry（ghcr.io），去掉阿里云与 Docker Hub。
+#   那两个 registry 用的是 labring 官方仓库的 secrets，fork 不会继承，
+#   原 workflow 的 "Login to Ali Hub" 步骤没有 if 保护，在 fork 里必然失败。
+# - 只构建 fastgpt 一个镜像，不构建官方给 /fastai 路径用的 fastgpt-sub-route。
+# - 默认只构建 linux/amd64（常见云服务器架构），需要时可在手动触发时改。
+#
+# 触发方式：
+# - 打 v* 标签自动触发
+# - 或在 Actions 页面手动运行（workflow_dispatch），自行填 tag
+name: Build FastGPT Image (fork)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '镜像标签，例如 v4.17.0-multiuser'
+        required: true
+        type: string
+      platforms:
+        description: '目标平台'
+        required: false
+        default: 'linux/amd64'
+        type: choice
+        options:
+          - 'linux/amd64'
+          - 'linux/amd64,linux/arm64'
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 解析镜像名与标签
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.tag || github.ref_name }}"
+          if [ -z "$VERSION" ]; then
+            echo "::error::未能确定镜像标签"
+            exit 1
+          fi
+          # ghcr 要求镜像名全小写，而组织名/用户名可能含大写
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${OWNER}/fastgpt" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "将构建：ghcr.io/${OWNER}/fastgpt:${VERSION}"
+
+      - name: Set up QEMU
+        # 仅在需要跨架构（arm64）时才用得上；单 amd64 构建不会走模拟
+        if: contains(inputs.platforms || 'linux/amd64', 'arm64')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: projects/app/Dockerfile
+          platforms: ${{ inputs.platforms || 'linux/amd64' }}
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.description=FastGPT with open-source multi-user support
+          # GitHub Actions 缓存，避免每次全量重装依赖
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 输出拉取命令
+        run: |
+          echo "### 镜像已推送" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "docker pull ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "首次推送后包默认为 private，服务器若未登录 ghcr 需在 Packages 设置中改为 public。" >> "$GITHUB_STEP_SUMMARY"

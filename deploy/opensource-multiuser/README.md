@@ -17,19 +17,46 @@
 
 ### 方式 A：走 CI 出镜像（推荐）
 
-仓库自带 `.github/workflows/build-fastgpt.yml`，打 `v*` tag 即触发，产出
-**amd64 + arm64** 双架构镜像并推送到：
+**使用 `.github/workflows/build-fastgpt-fork.yml`，不要用官方的 `build-fastgpt.yml`。**
+官方那份会推阿里云和 Docker Hub，用的是上游仓库的 secrets，fork 不会继承，
+且 `Login to Ali Hub` 步骤没有 `if` 保护，在 fork 中必然失败。
 
-```
-ghcr.io/<你的 GitHub 账号>/fastgpt:<tag>
-```
-
-运维直接 `docker pull`，与拉官方镜像无异。省去服务器构建的内存与耗时。
+fork 专用版只推 GHCR、只构建 `fastgpt` 一个镜像、默认单 amd64 架构。
 
 ```bash
 git push origin feat/opensource-multi-user-team
 git tag v4.17.0-multiuser && git push origin v4.17.0-multiuser
 ```
+
+产物：
+
+```
+ghcr.io/<账号或组织名>/fastgpt:v4.17.0-multiuser
+ghcr.io/<账号或组织名>/fastgpt:latest
+```
+
+也可在 Actions 页面手动触发（workflow_dispatch），自行填标签、按需切换到
+`linux/amd64,linux/arm64` 双架构。
+
+#### 首次推送后必做
+
+GHCR 的包**默认是 private**，即使仓库是公开的。服务器直接 `docker pull` 会 401。
+二选一：
+
+- 在 `https://github.com/orgs/<组织名>/packages`（个人账号则是 `/users/<用户名>/packages`）
+  找到 `fastgpt` 包 → Package settings → Change visibility → **Public**，之后服务器免登录拉取
+- 或保持 private，服务器用具备 `read:packages` 权限的 PAT 登录：
+  `docker login ghcr.io -u <用户名> -p <PAT>`
+
+#### 仓库在组织下时的额外检查
+
+组织比个人账号多两层限制，**打 tag 前先确认，否则会白跑一次**：
+
+- Settings → Actions → General → **Actions permissions** 需允许第三方 action
+  （本 workflow 用到 `actions/checkout`、`docker/login-action`、`docker/build-push-action`）
+- 组织若限制 Actions 创建包，首次推送会 403；workflow 已声明 `permissions: packages: write`
+
+费用：公开仓库的 Actions 免费不限量；私有仓库走**组织**的额度（Free 计划 2000 分钟/月）。
 
 ### 方式 B：服务器上现构建
 
