@@ -184,7 +184,14 @@ docker run --rm --network <生产网络> alpine getent hosts <mongo服务名>   
 
 ## 8. nginx 反向代理
 
-模板见 `nginx-fastgpt.conf`，已用 nginx:alpine 实测 `nginx -t` 通过。
+模板见 `nginx-fastgpt.conf`。
+
+已验证：
+- 语法在 nginx **1.20 / 1.22 / 1.24 / 1.29** 上均通过（`http2 on;` 是 1.25.1+ 才有的
+  指令，模板改用 `listen 443 ssl http2;` 兼容写法，Ubuntu 22.04、Debian 12 自带版本可直接用）
+- 起真实 nginx + 模拟 SSE 源端做流量测试：五条消息按 292/300/327/264ms 间隔逐条到达，
+  确认 `proxy_buffering off` 生效；`x-real-ip`、`x-forwarded-for`、`x-forwarded-proto`
+  均正确透传
 
 **前置要求**：模板用到 `$connection_upgrade`，必须在 `nginx.conf` 的 http 块中定义，
 否则启动报 `unknown variable connection_upgrade`：
