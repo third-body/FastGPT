@@ -7,7 +7,12 @@ on:
       - "v*"
 
 jobs:
+  # fork 中这两个官方发布流程必然失败：它们依赖上游仓库的阿里云 / Docker Hub
+  # secrets，build-admin 还要用 PRO_SUBMODULE_TOKEN 拉私有的 pro 子模块。
+  # 打 v* 标签时会跟着一起触发并报错，故在非上游仓库直接跳过。
+  # fork 请使用 build-fastgpt-fork.yml。
   validate-version:
+    if: github.repository == 'labring/FastGPT'
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
