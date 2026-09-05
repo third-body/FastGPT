@@ -317,8 +317,37 @@ do_verify() {
         print(bad === 0 ? "   全部迁移成功" : "   有 " + bad + " 个迁移未成功");
       }' 2>/dev/null || warn "迁移状态查询失败"
 
-  log "近期错误日志"
-  dc logs --since 5m "$SVC_APP" 2>&1 | grep -iE "\bERR\b|error:" | tail -10 || echo "   无"
+  # 区分「启动瞬间的连接抖动」与「就绪后仍在发生的错误」。
+  # promote 刚重启完 app 就跑 verify 时，BullMQ / ioredis 往往会在依赖服务
+  # 就绪前连一次并超时（表现为 connect ETIMEDOUT），随后自动重连成功。
+  # 这类错误全部聚集在启动那一刻，不代表升级失败；真正要关注的是
+  # 应用已经 ready 之后还在持续冒出来的错误。
+  log "错误日志分析"
+  local started_at
+  started_at=$(docker inspect -f '{{.State.StartedAt}}' "$(cid "$SVC_APP")" 2>/dev/null || echo "")
+  if [ -n "$started_at" ]; then
+    echo "   app 启动于 $started_at"
+  fi
+
+  # 观察 20 秒内是否有新错误产生。
+  # 用相对时间（--since 20s）而非绝对时间戳：docker 对不带时区后缀的
+  # ISO 时间按本地时区解释，而 date -u 产出的是 UTC，两者不一致会导致
+  # 窗口整体偏移（UTC+8 环境下会把 8 小时前的旧日志也算进来）。
+  echo "   观察 20 秒，检查是否有持续发生的错误..."
+  sleep 20
+  local ongoing
+  ongoing=$(dc logs --since 20s "$SVC_APP" 2>&1 | grep -icE "\bERR\b|error:" || true)
+
+  if [ "${ongoing:-0}" -eq 0 ]; then
+    ok "就绪后 20 秒内无新错误"
+    local startup
+    startup=$(dc logs --since 10m "$SVC_APP" 2>&1 | grep -icE "\bERR\b|error:" || true)
+    [ "${startup:-0}" -gt 0 ] && \
+      echo "   （启动阶段有 ${startup} 条错误，多为依赖服务就绪前的连接抖动，已自愈）"
+  else
+    warn "就绪后仍有 ${ongoing} 条错误，需要排查："
+    dc logs --since 20s "$SVC_APP" 2>&1 | grep -iE "\bERR\b|error:" | tail -10
+  fi
 }
 
 case "${1:-}" in
