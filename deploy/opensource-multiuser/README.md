@@ -182,7 +182,50 @@ docker run --rm --network <预演网络> alpine getent hosts <mongo服务名>   
 docker run --rm --network <生产网络> alpine getent hosts <mongo服务名>   # 应解析到生产容器
 ```
 
-## 8. 本次新增功能一览
+## 8. nginx 反向代理
+
+模板见 `nginx-fastgpt.conf`，已用 nginx:alpine 实测 `nginx -t` 通过。
+
+**前置要求**：模板用到 `$connection_upgrade`，必须在 `nginx.conf` 的 http 块中定义，
+否则启动报 `unknown variable connection_upgrade`：
+
+```nginx
+http {
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+    include /etc/nginx/conf.d/*.conf;
+}
+```
+
+**必改三处**：`server_name`、`ssl_certificate*`、`upstream fastgpt` 的地址。
+
+**改完必须同步 `FE_DOMAIN`**，填用户浏览器实际访问的地址（含协议）：
+
+```yaml
+FE_DOMAIN: https://fastgpt.example.com   # 不是容器内部地址，不是 ip:port
+```
+
+`FE_DOMAIN` 是运行时读取的，改完只需重启 app，无需重新构建镜像：
+
+```bash
+docker compose -p fastgpt -f <compose> up -d fastgpt-app
+```
+
+### 针对 FastGPT 的几处关键配置
+
+| 配置 | 原因 |
+|---|---|
+| `proxy_buffering off` | 对话走 SSE 流式返回。开启缓冲会让响应被攒在 nginx 内存里一次性吐出，前端表现为「长时间无响应后突然全部出现」 |
+| `client_max_body_size 1024m` | 知识库上传上限由 `UPLOAD_FILE_MAX_SIZE` 控制（默认 1000MB），nginx 侧不放开会被 413 拦下 |
+| `proxy_read_timeout 600s` | 知识库训练、长对话可能持续数分钟 |
+| `X-Real-IP` / `X-Forwarded-For` | FastGPT 优先按 `x-real-ip` 解析客户端 IP，用于登录会话与审计日志。缺失会把所有人记录成 nginx 的内网地址 |
+
+模板末尾的 `/d/{signedAlias}` 段是**可选**的，仅在配置了
+`FILE_DOWNLOAD_PUBLIC_URL_PREFIX` 时才需要；未配置请整段删除。
+
+## 9. 本次新增功能一览
 
 | 功能 | 状态 |
 |---|---|
