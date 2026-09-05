@@ -232,7 +232,43 @@ docker compose -p fastgpt -f <compose> up -d fastgpt-app
 模板末尾的 `/d/{signedAlias}` 段是**可选**的，仅在配置了
 `FILE_DOWNLOAD_PUBLIC_URL_PREFIX` 时才需要；未配置请整段删除。
 
-## 9. 本次新增功能一览
+## 9. 已知历史数据问题：chatConfig 中的 null
+
+**症状**：打开某些应用（尤其是 v4.15 及更早创建的）时报
+
+```
+Invalid input: expected object, received null   path: ["chatConfig","questionGuide"]
+```
+
+**原因**：v4.15 及更早版本会把未配置的 `chatConfig` 子项显式存为 `null`，
+而 4.17 的 Zod schema 用 `z.optional()`——它只接受 `undefined`，不接受 `null`。
+与权限、协作者功能无关，只是升级后才暴露的历史数据不兼容。
+
+受影响的不止 `questionGuide`，`chatConfig` 下 11 个子项都可能中招。
+
+**修复**：用 `fix-null-chatconfig.js` 把这些 null 字段 `$unset` 掉。
+
+```bash
+# 0. 先备份
+./fastgpt-upgrade.sh backup
+
+# 1. 拷进容器（旧版 mongo shell 从 stdin 读会按行解析，块注释会失败）
+docker cp fix-null-chatconfig.js <mongo容器>:/tmp/
+
+# 2. 预演，只统计不修改
+docker exec <mongo容器> mongo -u <user> -p <psw> \
+  --authenticationDatabase admin fastgpt /tmp/fix-null-chatconfig.js
+
+# 3. 确认无误后把脚本里的 DRY_RUN 改为 false，重复步骤 1-2
+```
+
+脚本幂等，重复执行安全。4.17 的写入路径不会再产生 null，只需执行一次。
+
+**为什么不改 schema**：`.nullish()` 会把 `null` 引入推导类型，实测导致 11 个文件
+共 20+ 处下游报错；`z.preprocess` 归一化则会让字段类型退化为 `unknown` 并失去
+可选性。两种方案都试过并回退，清理数据的改动面最小。
+
+## 10. 本次新增功能一览
 
 | 功能 | 状态 |
 |---|---|
