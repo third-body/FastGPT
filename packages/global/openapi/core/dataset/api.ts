@@ -385,7 +385,7 @@ export const UpdateDatasetBodySchema = z.object({
     description: '知识库 Agent 模型 ID'
   }),
   vlmModelId: z.string().optional().meta({
-    description: '视觉语言模型 ID'
+    description: '视觉语言模型 ID，传空字符串表示清空'
   }),
   websiteConfig: z
     .object({

@@ -3,6 +3,7 @@ import { Box, Flex, Switch, Input } from '@chakra-ui/react';
 import { useConfirm } from '@fastgpt/web/hooks/useConfirm';
 import { useForm } from 'react-hook-form';
 import type { DatasetItemType } from '@fastgpt/global/core/dataset/type';
+import type { UpdateDatasetBody } from '@fastgpt/global/openapi/core/dataset/api';
 import Avatar from '@fastgpt/web/components/common/Avatar';
 import { useTranslation } from 'next-i18next';
 import { useSystemStore } from '@/web/common/system/useSystemStore';
@@ -66,14 +67,13 @@ const Info = ({ datasetId }: { datasetId: string }) => {
       title: t('common:action_confirm')
     });
 
+  /**
+   * 只提交本次变更的字段。后端会严格校验传入的模型 ID，若连带提交未改动的失效模型，
+   * 会导致修改其它字段也被“模型不存在”拒绝。vlmModelId 传空字符串表示清空。
+   */
   const { runAsync: onSave } = useRequest(
-    (data: DatasetItemType) => {
-      return updateDataset({
-        id: datasetId,
-        agentModelId: data.agentModel?.modelId ?? data.agentModelId,
-        vlmModelId: data.vlmModel?.modelId ?? data.vlmModelId,
-        externalReadUrl: data.externalReadUrl
-      });
+    (data: Pick<UpdateDatasetBody, 'agentModelId' | 'vlmModelId' | 'externalReadUrl'>) => {
+      return updateDataset({ id: datasetId, ...data });
     },
     {
       successToast: t('common:update_success'),
@@ -220,7 +220,7 @@ const Info = ({ datasetId }: { datasetId: string }) => {
                 const agentModel = llmModelList.find((item) => item.modelId === e);
                 if (!agentModel) return;
                 setValue('agentModel', agentModel);
-                return handleSubmit((data) => onSave({ ...data, agentModel: agentModel }))();
+                return onSave({ agentModelId: agentModel.modelId });
               }}
             />
           </Box>
@@ -240,11 +240,18 @@ const Info = ({ datasetId }: { datasetId: string }) => {
                 value: item.modelId
               }))}
               fontSize={'mini'}
+              canBeUnset
               onChange={(e) => {
+                // 选择“未配置”时清空图片理解模型，便于移除已失效的 VLM
+                if (!e) {
+                  setValue('vlmModel', undefined);
+                  setValue('vlmModelId', undefined);
+                  return onSave({ vlmModelId: '' });
+                }
                 const vlmModel = vllmModelList.find((item) => item.modelId === e);
                 if (!vlmModel) return;
                 setValue('vlmModel', vlmModel);
-                return handleSubmit((data) => onSave({ ...data, vlmModel }))();
+                return onSave({ vlmModelId: vlmModel.modelId });
               }}
             />
           </Box>
@@ -290,7 +297,7 @@ const Info = ({ datasetId }: { datasetId: string }) => {
                 flex={[1, '0 0 320px']}
                 placeholder="https://test.com/read?fileId={{fileId}}"
                 {...register('externalReadUrl')}
-                onBlur={handleSubmit((data) => onSave(data))}
+                onBlur={handleSubmit((data) => onSave({ externalReadUrl: data.externalReadUrl }))}
               />
             </Box>
           </>

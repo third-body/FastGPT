@@ -111,7 +111,9 @@ async function handler(req: ApiRequestProps<UpdateDatasetBody>) {
     : undefined;
 
   const agentModelData = getOptionalLLMModelData({ modelId: agentModelId });
-  const vlmModelData = getOptionalVlmModelData({ modelId: vlmModelId });
+  // vlmModelId 传空字符串表示清空图片理解模型（例如原模型已失效），跳过模型校验
+  const clearVlmModel = vlmModelId === '';
+  const vlmModelData = clearVlmModel ? undefined : getOptionalVlmModelData({ modelId: vlmModelId });
 
   if (isMove) {
     if (parentId) {
@@ -244,7 +246,8 @@ async function handler(req: ApiRequestProps<UpdateDatasetBody>) {
         ...(isMove && { inheritPermission: true }),
         ...(typeof autoSync === 'boolean' && { autoSync }),
         ...apiDatasetParams,
-        ...(!isMove && { updateTime: new Date() })
+        ...(!isMove && { updateTime: new Date() }),
+        ...(clearVlmModel && { $unset: { vlmModelId: 1, vlmModel: 1 } })
       },
       { session }
     );

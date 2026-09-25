@@ -58,10 +58,18 @@ async function handler(req: ApiRequestProps): Promise<RebuildEmbeddingResponse> 
     return Promise.reject('数据集正在训练或者重建中，请稍后再试');
   }
 
-  const vlmModelData = getOptionalVlmModelData({
-    modelId: dataset.vlmModelId ? String(dataset.vlmModelId) : undefined,
-    model: dataset.vlmModel
-  });
+  // 图片理解模型已失效（删除/停用/不再支持视觉）时按未配置处理，避免阻塞索引模型切换；
+  // 此时图片数据不会进入 imageParse 模式，训练阶段也不会再用到该模型。
+  const vlmModelData = (() => {
+    try {
+      return getOptionalVlmModelData({
+        modelId: dataset.vlmModelId ? String(dataset.vlmModelId) : undefined,
+        model: dataset.vlmModel
+      });
+    } catch {
+      return undefined;
+    }
+  })();
   const { availableVlmModel, supportVlm, supportImageIndex } = getDatasetImageIndexCapability({
     vectorModel: vectorModelData,
     vlmModel: vlmModelData

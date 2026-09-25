@@ -235,4 +235,34 @@ describe('POST /api/core/dataset/training/rebuildEmbedding', () => {
       })
     );
   });
+
+  it('should ignore stale VLM model and not enqueue imageParse mode', async () => {
+    const { root, dataset, collection } = await createDatasetContext({
+      currentVectorModel: visionEmbeddingModel
+    });
+    await MongoDataset.updateOne({ _id: dataset._id }, { vlmModelId: '507f1f77bcf86cd799439099' });
+    const data = await MongoDatasetData.create({
+      teamId: root.teamId,
+      tmbId: root.tmbId,
+      datasetId: dataset._id,
+      collectionId: collection._id,
+      q: '',
+      imageId: 'dataset/team/main.png'
+    });
+
+    const res = await Call(handler, {
+      auth: root,
+      body: {
+        datasetId: String(dataset._id),
+        vectorModelId: textOnlyEmbeddingModel.modelId
+      }
+    });
+
+    const updatedDataset = await MongoDataset.findById(dataset._id).lean();
+    const training = await MongoDatasetTraining.findOne({ dataId: data._id }).lean();
+
+    expect(res.code).toBe(200);
+    expect(String(updatedDataset?.vectorModelId)).toBe(textOnlyEmbeddingModel.modelId);
+    expect(training?.mode).not.toBe(TrainingModeEnum.imageParse);
+  });
 });
