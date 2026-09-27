@@ -11,6 +11,8 @@ import {
   TestAdminSystemModelQuerySchema,
   TestAdminSystemModelResponseSchema,
   UpdateDefaultModelsBodySchema,
+  ReplaceSystemModelBodySchema,
+  ReplaceSystemModelResponseSchema,
   UpdateSystemModelBodySchema,
   UpdateSystemModelsWithJsonBodySchema
 } from './api';
@@ -136,6 +138,39 @@ export const AdminSystemModelPath: OpenAPIPath = {
         content: { 'application/json': { schema: UpdateDefaultModelsBodySchema } }
       },
       responses: { 200: { description: '更新成功' } }
+    }
+  },
+  '/admin/settings/model/replace/preview': {
+    post: {
+      summary: '预览模型替换',
+      description: '统计各类资源中引用源模型的数量，不写入数据',
+      tags: [DevApiTagsMap.adminSettings],
+      requestBody: {
+        content: { 'application/json': { schema: ReplaceSystemModelBodySchema } }
+      },
+      responses: {
+        200: {
+          description: '预览结果',
+          content: { 'application/json': { schema: ReplaceSystemModelResponseSchema } }
+        }
+      }
+    }
+  },
+  '/admin/settings/model/replace': {
+    post: {
+      summary: '执行模型替换',
+      description:
+        '把知识库、应用草稿与全部版本、应用模板、评测、系统默认模型中对源模型的引用改为目标模型；索引模型替换会为受影响知识库触发重建',
+      tags: [DevApiTagsMap.adminSettings],
+      requestBody: {
+        content: { 'application/json': { schema: ReplaceSystemModelBodySchema } }
+      },
+      responses: {
+        200: {
+          description: '执行结果',
+          content: { 'application/json': { schema: ReplaceSystemModelResponseSchema } }
+        }
+      }
     }
   }
 };

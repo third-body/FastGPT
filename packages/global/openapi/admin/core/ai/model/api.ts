@@ -221,3 +221,60 @@ export const UpdateDefaultModelsBodySchema = z.object({
   chatTitleLLMModelId: ModelIdSchema.optional()
 });
 export type UpdateDefaultModelsBody = z.infer<typeof UpdateDefaultModelsBodySchema>;
+
+/* ============================================================================
+ * API: 预览 / 执行模型替换
+ * Route: POST /api/admin/settings/model/replace/preview
+ * Route: POST /api/admin/settings/model/replace
+ * Method: POST
+ * Description: 把全部资源中对源模型的引用替换为目标模型；预览只统计不写入
+ * Tags: ['管理员系统配置', 'Write']
+ * ============================================================================ */
+
+export const ReplaceSystemModelBodySchema = z.object({
+  sourceModelId: ModelIdSchema.meta({ description: '被替换的模型 ID，允许已停用' }),
+  targetModelId: ModelIdSchema.meta({ description: '替换后的模型 ID，必须已启用且类型一致' })
+});
+export type ReplaceSystemModelBody = z.infer<typeof ReplaceSystemModelBodySchema>;
+
+export const ModelReplaceItemKeySchema = z
+  .enum([
+    'datasetAgentModel',
+    'datasetVlmModel',
+    'datasetVlmModelCleared',
+    'datasetVectorModel',
+    'app',
+    'appVersion',
+    'appTemplate',
+    'evaluation',
+    'defaultModel'
+  ])
+  .meta({
+    description:
+      '引用位置：知识库文本理解/图片理解/被清空的图片理解/索引模型、应用草稿、应用版本、应用模板、评测、系统默认模型'
+  });
+export type ModelReplaceItemKey = z.infer<typeof ModelReplaceItemKeySchema>;
+
+export const ReplaceSystemModelResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      key: ModelReplaceItemKeySchema,
+      matched: z.number().meta({ description: '命中引用的资源数' }),
+      updated: z.number().meta({ description: '已改写的资源数，预览时为 0' }),
+      skipped: z.number().meta({ description: '跳过的资源数（如知识库正在训练）' })
+    })
+  ),
+  rebuildDataCount: z.number().meta({ description: '索引模型替换时需要重建的数据条数' }),
+  targetRestricted: z
+    .boolean()
+    .meta({ description: '目标模型是否配置了成员可用权限，受限时部分成员可能无权使用' }),
+  failures: z.array(
+    z.object({
+      key: ModelReplaceItemKeySchema,
+      resourceId: z.string(),
+      name: z.string().optional(),
+      reason: z.string()
+    })
+  )
+});
+export type ReplaceSystemModelResponse = z.infer<typeof ReplaceSystemModelResponseSchema>;

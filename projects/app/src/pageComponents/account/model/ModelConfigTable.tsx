@@ -64,6 +64,7 @@ import { useSet } from 'ahooks';
 
 const MyModal = dynamic(() => import('@fastgpt/web/components/common/MyModal'));
 const ModelEditModal = dynamic(() => import('./AddModelBox').then((mod) => mod.ModelEditModal));
+const ReplaceModelModal = dynamic(() => import('./ReplaceModelModal'));
 
 const ModelTable = ({ Tab }: { Tab: React.ReactNode }) => {
   const { t, i18n } = useClientTranslation('config_model');
@@ -312,6 +313,7 @@ const ModelTable = ({ Tab }: { Tab: React.ReactNode }) => {
   });
 
   const [editModelData, setEditModelData] = useState<SystemModelDataType>();
+  const [replaceSourceModel, setReplaceSourceModel] = useState<SystemModelDataType>();
   const { runAsync: onEditModel, loading: loadingData } = useRequest(
     (modelId: string) => getSystemModelDetail(modelId),
     {
@@ -537,6 +539,15 @@ const ModelTable = ({ Tab }: { Tab: React.ReactNode }) => {
                             tip={t('config_model:model.edit_model')}
                             onClick={() => onEditModel(item.modelId!)}
                           />
+                          <MyIconButton
+                            icon={'common/lineChange'}
+                            tip={t('config_model:model.replace_model')}
+                            onClick={() =>
+                              setReplaceSourceModel(
+                                systemModelList.find((model) => model.modelId === item.modelId)
+                              )
+                            }
+                          />
                           {item.isCustom && (
                             <PopoverConfirm
                               Trigger={
@@ -565,6 +576,14 @@ const ModelTable = ({ Tab }: { Tab: React.ReactNode }) => {
           modelData={editModelData}
           onSuccess={refreshModels}
           onClose={() => setEditModelData(undefined)}
+        />
+      )}
+      {!!replaceSourceModel && (
+        <ReplaceModelModal
+          sourceModel={replaceSourceModel}
+          models={systemModelList}
+          onClose={() => setReplaceSourceModel(undefined)}
+          onSuccess={refreshModels}
         />
       )}
       {isOpenJsonConfig && (

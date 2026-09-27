@@ -8,6 +8,8 @@ import type {
   CreateSystemModelBody,
   CreateSystemModelResponse,
   GetAdminSystemModelListResponse,
+  ReplaceSystemModelBody,
+  ReplaceSystemModelResponse,
   TestAdminSystemModelQuery,
   UpdateDefaultModelsBody,
   UpdateSystemModelBody,
@@ -43,3 +45,10 @@ export const getTestModel = (data: TestAdminSystemModelQuery) =>
 
 export const putUpdateDefaultModels = (data: UpdateDefaultModelsBody) =>
   PUT(`${adminModelPath}/updateDefault`, data);
+
+/** 预览模型替换：统计引用源模型的资源数量，不写入。 */
+export const postReplaceSystemModelPreview = (data: ReplaceSystemModelBody) =>
+  POST<ReplaceSystemModelResponse>(`${adminModelPath}/replace/preview`, data);
+/** 执行模型替换；索引模型替换会触发知识库重建，耗时较长。 */
+export const postReplaceSystemModel = (data: ReplaceSystemModelBody) =>
+  POST<ReplaceSystemModelResponse>(`${adminModelPath}/replace`, data, { timeout: 600000 });
