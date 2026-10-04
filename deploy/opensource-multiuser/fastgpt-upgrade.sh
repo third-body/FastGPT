@@ -453,5 +453,6 @@ case "${1:-}" in
   rollback) do_rollback "${2:-}" ;;
   verify)   do_verify ;;
   tune)     do_tune ;;
-  *) sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  # 只打印文件头的注释块作为帮助，遇到第一行非注释即停止
+  *) awk 'NR > 2 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"; exit 1 ;;
 esac
