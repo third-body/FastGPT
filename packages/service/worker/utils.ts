@@ -140,6 +140,15 @@ export type WorkerPoolResourcePolicy<Props> = {
   getResourceSnapshot: () => WorkerPoolResourceSnapshot;
   /** 可选的额外准入判断，用于无法按任务大小估算、只检查当前系统余量的轻量任务。 */
   canRunTask?: (props: { data: Props; resourceSnapshot: WorkerPoolResourceSnapshot }) => boolean;
+  /**
+   * 可选的空闲放行上限：池内没有运行中的任务时，预估不超过该值的任务可越过动态余量直接执行。
+   * 动态余量由池外进程或可回收缓存占用时，等待不会让它变多，严格按余量判断会让队列饥饿到超时；
+   * 该上限应取系统安全保留以内的值，保证放行的任务只消耗保留余量。
+   */
+  getIdleTaskMaxResourceBytes?: (props: {
+    data: Props;
+    resourceSnapshot: WorkerPoolResourceSnapshot;
+  }) => number;
   queueTimeoutMs: number;
   resourcePollIntervalMs?: number;
 };
@@ -424,6 +433,19 @@ export class WorkerPool<Props = Record<string, any>, Response = any> {
       })
     ) {
       return false;
+    }
+
+    // 池空闲时放行一个小任务，避免外部内存长期紧张导致所有任务排队直至超时
+    if (
+      this.resourcePolicy.getIdleTaskMaxResourceBytes &&
+      !this.workerQueue.some((item) => item.status === 'running') &&
+      task.resourceBytes <=
+        this.resourcePolicy.getIdleTaskMaxResourceBytes({
+          data: task.data,
+          resourceSnapshot: currentResourceSnapshot
+        })
+    ) {
+      return true;
     }
 
     return (

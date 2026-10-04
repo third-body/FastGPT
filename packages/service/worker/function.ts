@@ -52,6 +52,8 @@ type ReadFileWorkerProps = {
   };
 };
 
+const IDLE_TASK_MAX_RESOURCE_BYTES = 128 * 1024 * 1024;
+
 const getReadFileWorker = () =>
   getWorkerController<ReadFileWorkerProps, ReadFileResponse>({
     name: WorkerNameEnum.readFile,
@@ -72,6 +74,15 @@ const getReadFileWorker = () =>
           memoryDetails
         };
       },
+      // 内存紧张时至少能串行解析 md/txt/小文档：池空闲时放行预估不超过 128 MiB（且不超过安全保留）的任务。
+      // 外链文件大小不可信，下载中软预留会持续增长，不参与空闲放行；大文件仍按动态余量排队，避免撑爆进程。
+      getIdleTaskMaxResourceBytes: ({ data, resourceSnapshot }) =>
+        data.sourceKind === 'externalHttp'
+          ? 0
+          : Math.min(
+              IDLE_TASK_MAX_RESOURCE_BYTES,
+              resourceSnapshot.memoryDetails?.safetyReserveBytes ?? 0
+            ),
       queueTimeoutMs: fileParseResourceConstants.queueTimeoutMs
     },
     // 扩展名集合由上传白名单约束，可作为结构化日志中稳定、低基数的任务类型。

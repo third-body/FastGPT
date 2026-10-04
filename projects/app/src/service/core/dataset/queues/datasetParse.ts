@@ -205,10 +205,6 @@ export const datasetParseQueue = async (): Promise<any> => {
         }
         continue;
       }
-      const agentModelData = getDatasetAgentModel(dataset);
-      const embeddingModelData = getDatasetEmbeddingModel(dataset);
-      const vlmModelData = getDatasetVlmModel(dataset);
-
       logger.info('Parse queue task started', {
         trainingId: data._id,
         datasetId: data.datasetId,
@@ -245,6 +241,13 @@ export const datasetParseQueue = async (): Promise<any> => {
       taskLease.start();
 
       try {
+        // 模型解析必须在 try 内：知识库引用的模型被停用/删除时会抛“模型不存在”，
+        // 需要走下方 catch 写入 errorMsg，任务才会在界面显示为异常；
+        // 放在 try 外会直接中断 worker 循环且不留错误信息，任务静默重试直至消失。
+        const agentModelData = getDatasetAgentModel(dataset);
+        const embeddingModelData = getDatasetEmbeddingModel(dataset);
+        const vlmModelData = getDatasetVlmModel(dataset);
+
         const trainingMode = getTrainingModeByCollection({
           trainingType: collection.trainingType ?? DatasetCollectionDataProcessModeEnum.chunk,
           autoIndexes: collection.autoIndexes,

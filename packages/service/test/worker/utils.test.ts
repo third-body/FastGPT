@@ -328,6 +328,52 @@ describe('worker/utils WorkerPool', () => {
     );
   });
 
+  it('池空闲时放行不超过空闲上限的任务，运行期间其它任务仍按动态余量排队', async () => {
+    type Task = { simple: true; payload: string; delayMs: number; resourceBytes: number };
+    const pool = createPool<Task, { payload: string }>({
+      name: WorkerNameEnum.readFile,
+      maxReservedThreads: 2,
+      resourcePolicy: {
+        getTaskResourceBytes: (data) => data.resourceBytes,
+        // 动态余量长期为 0，模拟内存被池外进程或缓存占用
+        getResourceSnapshot: () => ({ availableResourceBytes: 0, maximumTaskResourceBytes: 100 }),
+        getIdleTaskMaxResourceBytes: () => 50,
+        queueTimeoutMs: 1000,
+        resourcePollIntervalMs: 5
+      }
+    });
+
+    const first = pool.run({ simple: true, payload: 'first', delayMs: 30, resourceBytes: 40 });
+    const second = pool.run({ simple: true, payload: 'second', delayMs: 1, resourceBytes: 40 });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // 第一个任务占用期间，第二个任务不能再越过动态余量
+    expect(pool.workerQueue.filter((item) => item.status === 'running')).toHaveLength(1);
+    expect(pool.waitQueue).toHaveLength(1);
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { payload: 'first' },
+      { payload: 'second' }
+    ]);
+  });
+
+  it('超过空闲上限的任务在余量不足时仍会排队超时', async () => {
+    const pool = createPool<{ resourceBytes: number }, never>({
+      name: WorkerNameEnum.readFile,
+      maxReservedThreads: 1,
+      resourcePolicy: {
+        getTaskResourceBytes: (data) => data.resourceBytes,
+        getResourceSnapshot: () => ({ availableResourceBytes: 0, maximumTaskResourceBytes: 100 }),
+        getIdleTaskMaxResourceBytes: () => 50,
+        queueTimeoutMs: 20
+      }
+    });
+
+    await expect(pool.run({ resourceBytes: 80 })).rejects.toMatchObject({
+      name: 'WorkerTaskQueueTimeoutError'
+    });
+  });
+
   it('额外内存准入不满足时继续排队，余量恢复后自动执行', async () => {
     let availableResourceBytes = 0;
     const pool = createPool<{ simple: true; payload: string }, { payload: string }>({
