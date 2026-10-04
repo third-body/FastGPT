@@ -13,6 +13,7 @@
 #   ./fastgpt-upgrade.sh rollback <备份目录>    用备份恢复并回退镜像
 #   ./fastgpt-upgrade.sh verify                健康检查与迁移状态
 #   ./fastgpt-upgrade.sh doctor                部署前自检
+#   ./fastgpt-upgrade.sh tune                  按服务器内存设置 Mongo 缓存上限并重启 Mongo
 #
 # 配置：同目录下的 fastgpt-upgrade.conf，或用同名环境变量覆盖。
 #
@@ -44,6 +45,9 @@ MONGO_DBS="${MONGO_DBS:-fastgpt fastgpt-plugin}"
 PGV_USER="${PGV_USER:-username}"
 PGA_USER="${PGA_USER:-postgres}"
 MINIO_DATA_PATH="${MINIO_DATA_PATH:-/data}"
+
+# Mongo WiredTiger 缓存上限（GB）。留空则按服务器内存自动计算，见 mongo_cache_gb
+MONGO_CACHE_GB="${MONGO_CACHE_GB:-}"
 
 log()  { printf '\033[1;34m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*"; }
@@ -81,6 +85,22 @@ volume_of() {
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"; }
 
+# Docker 可用的宿主机内存（GiB，向下取整）
+host_mem_gb() {
+  local mem
+  mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
+  echo $(( mem / 1024 / 1024 / 1024 ))
+}
+
+# Mongo 缓存上限（GB）。Mongo 默认占 (内存-1GB)*50%，与应用、PG、MinIO 同机时会把内存吃光，
+# 这里取约 1/4 内存：8G 机器给 1GB，16G 给 4GB，32G 给 8GB。
+# docker 报告的内存略小于标称值（16G 机器约 15GiB），因此按 (GiB+1)/4 取整。
+mongo_cache_gb() {
+  if [ -n "$MONGO_CACHE_GB" ]; then echo "$MONGO_CACHE_GB"; return; fi
+  local gb; gb=$(host_mem_gb)
+  if [ "$gb" -lt 12 ]; then echo 1; else echo $(( (gb + 1) / 4 )); fi
+}
+
 # ---------------------------------------------------------------- doctor
 do_doctor() {
   log "部署前自检"
@@ -98,12 +118,24 @@ do_doctor() {
   fi
   ok "FE_DOMAIN 已配置"
 
-  local mem
-  mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
-  if [ "$mem" -gt 0 ] && [ "$mem" -lt 12000000000 ]; then
-    warn "Docker 可用内存 $((mem/1024/1024/1024))GB。仅在本机构建镜像时需要 ≥12GB，拉取现成镜像可忽略"
+  # 运行所需内存：Mongo、PG 向量库、MinIO、Redis、AI Proxy 与应用同机部署。
+  # 模型都走外部 API 时，8G 为最低，16G 才有余量；低于 8G 文件解析会因内存不足排队超时。
+  local mem_gb; mem_gb=$(host_mem_gb)
+  if [ "$mem_gb" -le 0 ]; then
+    warn "无法获取服务器内存"
+  elif [ "$mem_gb" -lt 7 ]; then
+    warn "服务器内存 ${mem_gb}GB，低于最低要求 8GB，文件解析和对话会因内存不足失败"
+  elif [ "$mem_gb" -lt 15 ]; then
+    warn "服务器内存 ${mem_gb}GB，可运行但偏紧，建议 16GB；务必设置 Mongo 缓存上限（tune）"
   else
-    ok "内存 $((mem/1024/1024/1024))GB"
+    ok "服务器内存 ${mem_gb}GB"
+  fi
+
+  # Mongo 未设缓存上限时默认吃掉约一半内存
+  if dc config 2>/dev/null | grep -q -- '--wiredTigerCacheSizeGB'; then
+    ok "Mongo 已设置缓存上限"
+  else
+    warn "Mongo 未设置缓存上限，默认会占用约一半内存。运行 $0 tune 设置（建议 $(mongo_cache_gb)GB）"
   fi
 
   # mongo 6+ 起 mongodump 不再内置，需单独安装 mongodb-database-tools
@@ -224,6 +256,65 @@ set_app_image() {
   ok "image -> $newimg"
 }
 
+# ---------------------------------------------------------------- Mongo 缓存上限
+# 在 mongo 服务的单行 command 末尾追加或替换 --wiredTigerCacheSizeGB。
+# 只处理 `command: mongod ...` 的单行字符串写法（官方模板即此写法）；
+# 列表或带引号的写法结构多样，自动改写容易出错，交给人工处理。
+set_mongo_cache() {
+  local file="$1" svc="$2" gb="$3" tmp rc=0
+  tmp="$(mktemp)"
+  awk -v svc="$svc" -v gb="$gb" '
+    /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ {
+      key = $0; sub(/^  /, "", key); sub(/:[[:space:]]*$/, "", key)
+      in_svc = (key == svc); print; next
+    }
+    in_svc && /^    command:/ && !done {
+      done = 1
+      if ($0 ~ /^    command:[[:space:]]*(["\047[]|$)/) { manual = 1; print; next }
+      line = $0; comment = ""
+      i = index(line, " #")
+      if (i > 0) { comment = substr(line, i); line = substr(line, 1, i - 1) }
+      sub(/[[:space:]]+$/, "", line)
+      if (line ~ /--wiredTigerCacheSizeGB[[:space:]=]+[0-9.]+/) {
+        sub(/--wiredTigerCacheSizeGB[[:space:]=]+[0-9.]+/, "--wiredTigerCacheSizeGB " gb, line)
+      } else {
+        line = line " --wiredTigerCacheSizeGB " gb
+      }
+      print line comment; next
+    }
+    { print }
+    END { if (manual) exit 4; if (!done) exit 3 }
+  ' "$file" > "$tmp" || rc=$?
+  case "$rc" in
+    0) mv "$tmp" "$file" ;;
+    3) rm -f "$tmp"; die "服务 $svc 没有 command 字段，请手动添加：command: mongod ... --wiredTigerCacheSizeGB $gb" ;;
+    4) rm -f "$tmp"; die "服务 $svc 的 command 不是单行写法，请手动在参数末尾加上 --wiredTigerCacheSizeGB $gb" ;;
+    *) rm -f "$tmp"; die "改写 compose 失败（awk 退出码 ${rc}）" ;;
+  esac
+}
+
+# 设置 Mongo 缓存上限；参数未变化时不重启 Mongo
+do_tune() {
+  local gb; gb=$(mongo_cache_gb)
+  log "Mongo 缓存上限 -> ${gb}GB（服务器内存 $(host_mem_gb)GB）"
+
+  local ts bak; ts=$(date +%Y%m%d-%H%M%S); bak="$COMPOSE_FILE.bak-tune-$ts"
+  cp "$COMPOSE_FILE" "$bak"
+  set_mongo_cache "$COMPOSE_FILE" "$SVC_MONGO" "$gb"
+
+  if cmp -s "$COMPOSE_FILE" "$bak"; then
+    rm -f "$bak"
+    ok "已是 ${gb}GB，无需重启"
+    return
+  fi
+  ok "compose 已备份 -> $bak"
+  dc config --quiet || { cp "$bak" "$COMPOSE_FILE"; die "改写后 compose 语法异常，已还原"; }
+
+  # 重启 Mongo 期间应用会断开几秒，随后自动重连
+  dc up -d "$SVC_MONGO"
+  ok "Mongo 已按新参数重启"
+}
+
 # ---------------------------------------------------------------- build
 do_build() {
   local tag="${1:-$IMAGE_TAG}"
@@ -259,6 +350,10 @@ do_promote() {
 
   set_app_image "$COMPOSE_FILE" "$tag" "$SVC_APP"
   dc config --quiet || die "替换后 compose 语法异常，请用 $COMPOSE_FILE.bak-$ts 还原"
+
+  # 先限制 Mongo 内存再启动新版应用，避免内存被 Mongo 默认缓存吃光。
+  # 在子 shell 中执行：compose 写法无法自动改写时只警告，不中断已进行到一半的升级
+  ( do_tune ) || warn "Mongo 缓存上限未自动设置，请按上面的提示手动修改后运行 $0 tune"
 
   dc up -d "$SVC_APP"
   log "已切换，迁移将在应用启动时自动执行"
@@ -357,5 +452,6 @@ case "${1:-}" in
   promote)  do_promote "${2:-}" ;;
   rollback) do_rollback "${2:-}" ;;
   verify)   do_verify ;;
+  tune)     do_tune ;;
   *) sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -114,10 +114,10 @@ PGA_USER="postgres"
 ## 4. 升级步骤
 
 ```bash
-# ① 自检：docker/compose/FE_DOMAIN/内存/mongodump
+# ① 自检：docker/compose/FE_DOMAIN/服务器内存/Mongo 缓存上限/mongodump
 ./fastgpt-upgrade.sh doctor
 
-# ② 升级：自动先备份 → 改 compose 镜像 → 重启 app（迁移在启动时自动执行）
+# ② 升级：自动先备份 → 改 compose 镜像 → 设置 Mongo 缓存上限 → 重启 app（迁移在启动时自动执行）
 ./fastgpt-upgrade.sh promote ghcr.io/you/fastgpt:v4.17.0-multiuser
 
 # ③ 验证：健康检查 + 6 个迁移是否全部 succeeded + 近期错误日志
@@ -125,6 +125,23 @@ PGA_USER="postgres"
 ```
 
 `promote` 会打印回滚点路径，请记录。
+
+### 内存与 Mongo 缓存上限
+
+Mongo 默认把约 `(内存 - 1GB) × 50%` 用作缓存，与应用、PG、MinIO 同机部署时会把内存吃光，
+表现为文件解析报 `Worker resources remained busy for 30 minutes`。
+
+`promote` 会自动按服务器内存设置 `--wiredTigerCacheSizeGB`（<12G 为 1，16G 为 4，32G 为 8），
+也可单独执行，参数未变化时不会重启 Mongo：
+
+```bash
+./fastgpt-upgrade.sh tune
+```
+
+- 需要固定值时在配置文件中设置 `MONGO_CACHE_GB`
+- 只支持 `command: mongod ...` 单行写法（官方模板即此写法）；列表写法脚本会提示手动添加
+- 重启 Mongo 时应用会断开几秒并自动重连
+- 服务器内存建议：模型全部走外部 API 时 8G 为最低，16G 有余量
 
 ## 5. 回滚
 

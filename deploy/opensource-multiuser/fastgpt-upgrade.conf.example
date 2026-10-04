@@ -32,3 +32,8 @@ PGA_USER="postgres"
 
 # MinIO 数据在容器内的挂载点
 MINIO_DATA_PATH="/data"
+
+# ---- Mongo 缓存上限（GB）----
+# 留空按服务器内存自动计算：<12G 给 1，16G 给 4，32G 给 8。
+# Mongo 默认会占用约一半内存，与应用同机部署时必须限制。
+MONGO_CACHE_GB=""
