@@ -231,7 +231,9 @@ export const pathData2ToolList = async (
             requestProperties[param.name] = {
               ...param.schema,
               ...(description ? { description } : {}),
-              isToolParam: true
+              isToolParam: true,
+              // 记录 OpenAPI 参数位置，运行时据此放入 query / header / path
+              ...(param.in ? { 'x-param-in': param.in } : {})
             };
             inputProperties[param.name] = {
               type: param.schema.type || 'any',

@@ -317,7 +317,8 @@ export const dispatchTool = async ({
           : undefined,
         staticParams: httpTool.staticParams,
         staticHeaders: httpTool.staticHeaders,
-        staticBody: httpTool.staticBody
+        staticBody: httpTool.staticBody,
+        requestSchema: httpTool.requestSchema
       });
 
       if (errorMsg) {

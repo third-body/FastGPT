@@ -138,6 +138,9 @@ export const RunHttpToolBodySchema = z
     }),
     staticBody: HttpToolConfigTypeSchema.shape.staticBody.meta({
       description: '静态请求体'
+    }),
+    requestSchema: HttpToolConfigTypeSchema.shape.requestSchema.meta({
+      description: '工具请求结构，用于把参数分配到 query / header / path / 请求体'
     })
   })
   .meta({

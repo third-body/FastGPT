@@ -24,7 +24,8 @@ async function handler(
     headerSecret,
     staticParams,
     staticHeaders,
-    staticBody
+    staticBody,
+    requestSchema
   } = parseApiInput({
     req,
     bodySchema: RunHttpToolBodySchema
@@ -44,7 +45,8 @@ async function handler(
         : undefined,
       staticParams,
       staticHeaders,
-      staticBody
+      staticBody,
+      requestSchema
     })
   );
 }

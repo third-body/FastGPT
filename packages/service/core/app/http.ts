@@ -25,6 +25,8 @@ export type RunHTTPToolParams = {
   staticParams?: HttpToolConfigType['staticParams'];
   staticHeaders?: HttpToolConfigType['staticHeaders'];
   staticBody?: HttpToolConfigType['staticBody'];
+  /** 工具保存的请求结构，用于判断每个参数应放在 query / header / path 还是请求体 */
+  requestSchema?: HttpToolConfigType['requestSchema'];
 };
 
 export type RunHTTPToolResult = RequireOnlyOne<{
@@ -32,6 +34,52 @@ export type RunHTTPToolResult = RequireOnlyOne<{
   errorMsg?: string;
 }>;
 
+type HttpParamLocation = 'query' | 'header' | 'path' | 'body';
+
+/**
+ * 按工具定义把调用参数分配到 query / header / path / 请求体。
+ *
+ * - 新导入的 OpenAPI 工具在 requestSchema 属性上记录了 `x-param-in`（来自 parameters[].in），直接使用；
+ * - 旧数据没有该标记：来自 OpenAPI parameters 的属性带 `isToolParam`，按 query 处理；
+ *   来自 requestBody 的属性是原始 body schema，不带该标记；
+ * - 未声明的参数：POST/PUT/PATCH 放进请求体，其它方法放进 query。
+ */
+const splitParamsByLocation = ({
+  method,
+  params,
+  requestSchema
+}: Pick<RunHTTPToolParams, 'method' | 'params' | 'requestSchema'>) => {
+  const isBodyMethod = ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase());
+  const properties: Record<string, any> = requestSchema?.properties ?? {};
+  const result: Record<HttpParamLocation, Record<string, any>> = {
+    query: {},
+    header: {},
+    path: {},
+    body: {}
+  };
+
+  Object.entries(params).forEach(([key, value]) => {
+    const property = properties[key];
+    const location: HttpParamLocation = (() => {
+      const declared = property?.['x-param-in'];
+      if (declared === 'query' || declared === 'header' || declared === 'path') return declared;
+      if (declared === 'body') return isBodyMethod ? 'body' : 'query';
+      if (property?.isToolParam) return 'query';
+      return isBodyMethod ? 'body' : 'query';
+    })();
+    result[location][key] = value;
+  });
+
+  return { ...result, isBodyMethod };
+};
+
+/**
+ * 组装 HTTP 工具请求。
+ *
+ * 配置了 staticBody（非 none）或 staticParams 的手动工具保持原有行为：请求体由模板生成，
+ * 参数通过变量替换引用，staticParams 存在时参数整体并入 query。
+ * 否则按 splitParamsByLocation 把参数放到对应位置，POST/PUT/PATCH 以 JSON 请求体发送。
+ */
 const buildHttpRequest = ({
   method,
   params,
@@ -39,7 +87,8 @@ const buildHttpRequest = ({
   customHeaders,
   staticParams,
   staticHeaders,
-  staticBody
+  staticBody,
+  requestSchema
 }: Omit<RunHTTPToolParams, 'baseUrl' | 'toolPath'>) => {
   const replaceVariables = (text: string) => {
     return replaceEditorVariable({
@@ -49,9 +98,15 @@ const buildHttpRequest = ({
     });
   };
 
+  const useParamRouting = !staticParams && (!staticBody || staticBody.type === ContentTypes.none);
+  const routed = useParamRouting
+    ? splitParamsByLocation({ method, params, requestSchema })
+    : undefined;
+
   const body = (() => {
     if (!staticBody || staticBody.type === ContentTypes.none) {
-      return ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase()) ? {} : undefined;
+      if (!['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) return undefined;
+      return routed ? routed.body : {};
     }
 
     if (staticBody.type === ContentTypes.json) {
@@ -89,9 +144,15 @@ const buildHttpRequest = ({
     return undefined;
   })();
 
-  const contentType = contentTypeMap[staticBody?.type || ContentTypes.none];
+  const contentType =
+    contentTypeMap[staticBody?.type || ContentTypes.none] ||
+    (routed?.isBodyMethod ? contentTypeMap[ContentTypes.json] : '');
   const headers = {
     ...(contentType && { 'Content-Type': contentType }),
+    // 参数声明的请求头优先级最低，不能覆盖自定义请求头与鉴权密钥
+    ...Object.fromEntries(
+      Object.entries(routed?.header ?? {}).map(([key, value]) => [key, String(value)])
+    ),
     ...(customHeaders || {}),
     ...(headerSecret ? getSecretValue({ storeSecret: headerSecret }) : {}),
     ...(staticHeaders?.reduce(
@@ -117,8 +178,9 @@ const buildHttpRequest = ({
         {} as Record<string, any>
       ) || {};
 
-    const mergedParams =
-      method.toUpperCase() === 'GET' || staticParams
+    const mergedParams = routed
+      ? { ...staticParamsObj, ...routed.query }
+      : method.toUpperCase() === 'GET' || staticParams
         ? { ...staticParamsObj, ...params }
         : staticParamsObj;
 
@@ -128,9 +190,17 @@ const buildHttpRequest = ({
   return {
     headers,
     body,
-    queryParams
+    queryParams,
+    pathParams: routed?.path ?? {}
   };
 };
+
+/** 把 `{name}` 形式的路径参数替换为编码后的实际值 */
+const fillPathParams = (toolPath: string, pathParams: Record<string, any>) =>
+  Object.entries(pathParams).reduce(
+    (path, [key, value]) => path.split(`{${key}}`).join(encodeURIComponent(String(value))),
+    toolPath
+  );
 
 export const runHTTPTool = async ({
   baseUrl,
@@ -141,7 +211,8 @@ export const runHTTPTool = async ({
   customHeaders,
   staticParams,
   staticHeaders,
-  staticBody
+  staticBody,
+  requestSchema
 }: RunHTTPToolParams): Promise<RunHTTPToolResult> => {
   try {
     // Construct full base URL
@@ -153,28 +224,30 @@ export const runHTTPTool = async ({
 
     // SSRF Protection: Validate URL before making request
     // When baseUrl is empty, toolPath must be a complete URL
-    const fullUrl = fullBaseUrl
-      ? new URL(toolPath, fullBaseUrl).toString()
-      : new URL(toolPath).toString();
-
-    if (await isInternalAddress(fullUrl)) {
-      return { errorMsg: PRIVATE_URL_TEXT };
-    }
-
-    const { headers, body, queryParams } = buildHttpRequest({
+    const { headers, body, queryParams, pathParams } = buildHttpRequest({
       method,
       params,
       headerSecret,
       customHeaders,
       staticParams,
       staticHeaders,
-      staticBody
+      staticBody,
+      requestSchema
     });
+    const requestPath = fillPathParams(toolPath, pathParams);
+
+    const fullUrl = fullBaseUrl
+      ? new URL(requestPath, fullBaseUrl).toString()
+      : new URL(requestPath).toString();
+
+    if (await isInternalAddress(fullUrl)) {
+      return { errorMsg: PRIVATE_URL_TEXT };
+    }
 
     const { data } = await axios({
       method: method.toUpperCase(),
       baseURL: fullBaseUrl,
-      url: toolPath,
+      url: requestPath,
       headers,
       data: body,
       params: queryParams,

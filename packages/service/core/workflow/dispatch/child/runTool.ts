@@ -352,7 +352,8 @@ export const dispatchRunTool = async (props: RunToolProps): Promise<RunToolRespo
           : undefined,
         staticParams: httpTool.staticParams,
         staticHeaders: httpTool.staticHeaders,
-        staticBody: httpTool.staticBody
+        staticBody: httpTool.staticBody,
+        requestSchema: httpTool.requestSchema
       });
 
       if (errorMsg) {

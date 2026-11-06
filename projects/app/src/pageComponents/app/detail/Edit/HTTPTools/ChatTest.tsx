@@ -45,9 +45,15 @@ const ChatTest = ({
     { label: t('common:Output'), value: 'output' as const }
   ];
 
+  // 切换工具时清空上一次的输出：在渲染期比较上一个工具，避免在 effect 中同步 setState
+  const [prevTool, setPrevTool] = useState(currentTool);
+  if (prevTool !== currentTool) {
+    setPrevTool(currentTool);
+    setOutput('');
+  }
+
   useEffect(() => {
     reset({});
-    setOutput('');
   }, [currentTool, reset]);
 
   const { runAsync: runTool, loading: isRunning } = useRequest(
@@ -62,7 +68,8 @@ const ChatTest = ({
         customHeaders: customHeaders,
         staticParams: currentTool.staticParams,
         staticHeaders: currentTool.staticHeaders,
-        staticBody: currentTool.staticBody
+        staticBody: currentTool.staticBody,
+        requestSchema: currentTool.requestSchema
       });
     },
     {
