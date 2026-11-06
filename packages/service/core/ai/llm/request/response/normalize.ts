@@ -40,3 +40,19 @@ export const isStreamCompletionResponse = (
     ('iterator' in response || 'controller' in response)
   );
 };
+
+/**
+ * 把模型返回的工具名解析为本轮请求中的 function name；无法解析时返回 undefined。
+ *
+ * 工作流工具的 function name 是节点 ID（如 `uMQ1KR4VDTYA1xfa`），可读名称只写在描述开头
+ * （`member_overview: 查询...`，见 compileToolRuntime）。部分模型会按描述里的可读名称发起调用，
+ * 精确匹配失败时按描述前缀兜底，避免调用被静默丢弃后表现为“模型响应为空”。
+ */
+export const resolveToolCallName = (
+  name: string,
+  tools: { function: { name: string; description?: string } }[] = []
+): string | undefined => {
+  if (!name) return;
+  if (tools.some((tool) => tool.function.name === name)) return name;
+  return tools.find((tool) => tool.function.description?.startsWith(`${name}: `))?.function.name;
+};

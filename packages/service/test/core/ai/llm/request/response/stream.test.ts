@@ -265,6 +265,78 @@ describe('createStreamResponse', () => {
     expect(updateError).not.toHaveBeenCalled();
   });
 
+  it('模型按描述中的可读名称调用工作流工具时，映射回节点 ID', async () => {
+    const chunks = [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_1',
+                  function: { name: 'member_overview', arguments: '{"member_id":' }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"aaa001"}' } }] } }]
+      }
+    ];
+
+    mockParseLLMStreamResponse.mockReturnValue({
+      parsePart: () => ({ reasoningContent: '', content: '', responseContent: '' }),
+      getResponseData: () => ({
+        error: undefined,
+        reasoningContent: '',
+        content: '',
+        finish_reason: 'tool_calls' as const,
+        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }
+      }),
+      updateFinishReason: vi.fn(),
+      updateError: vi.fn()
+    });
+
+    const result = await createStreamResponse({
+      body: {
+        model: createModel(),
+        messages: [],
+        stream: true,
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'bBg7wOli6LA6UwlE',
+              description: 'member_info: 查询当前会员的基础资料',
+              parameters: { type: 'object' }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'uMQ1KR4VDTYA1xfa',
+              description: 'member_overview: 查询当前会员整体账户情况',
+              parameters: { type: 'object' }
+            }
+          }
+        ],
+        toolCallMode: 'toolChoice'
+      },
+      response: createMockStreamResponse(chunks)
+    });
+
+    expect(result.toolCalls).toEqual([
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'uMQ1KR4VDTYA1xfa', arguments: '{"member_id":"aaa001"}' }
+      }
+    ]);
+  });
+
   it('should parse prompt tool stream and emit parsed tool calls after stream ends', async () => {
     const chunks = [
       { choices: [{ delta: { content: '  0: hel' } }] },

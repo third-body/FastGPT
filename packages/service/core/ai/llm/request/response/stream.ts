@@ -6,6 +6,10 @@ import type {
 import { getNanoid } from '@fastgpt/global/common/string/tools';
 import { parseLLMStreamResponse } from '../../../utils';
 import { parsePromptToolCall } from '../../promptCall';
+import { resolveToolCallName } from './normalize';
+import { getLogger, LogCategories } from '../../../../../common/logger';
+
+const logger = getLogger(LogCategories.MODULE.AI.LLM);
 import type { CompleteParams, CompleteResponse, CreateLLMResponseProps } from '../types';
 
 /**
@@ -80,11 +84,12 @@ export const createStreamResponse = async ({
                 }
 
                 // 只有命中本轮请求传入的工具名时，才认为一个 tool call 已经开始。
-                if (tools.find((item) => item.function.name === callingTool!.name)) {
+                const resolvedName = resolveToolCallName(callingTool!.name, tools);
+                if (resolvedName) {
                   const call: ChatCompletionMessageToolCall = {
                     id: toolCall.id || getNanoid(6),
                     type: 'function',
-                    function: callingTool!
+                    function: { ...callingTool!, name: resolvedName }
                   };
                   toolCalls[index] = call;
                   onToolCall?.({ call });
@@ -109,6 +114,16 @@ export const createStreamResponse = async ({
       }
 
       const { reasoningContent, content, finish_reason, usage, error } = getResponseData();
+
+      // 模型调用了本轮未提供的工具名，调用被丢弃；记录名称便于排查“模型响应为空”
+      const unresolvedTool = callingTool as ChatCompletionMessageToolCall['function'] | null;
+      if (unresolvedTool) {
+        logger.warn('LLM tool call dropped: unknown tool name', {
+          model: modelData.model,
+          toolName: unresolvedTool.name,
+          availableTools: tools.map((item) => item.function.name)
+        });
+      }
 
       return {
         error,

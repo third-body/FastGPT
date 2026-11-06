@@ -6,6 +6,7 @@ import type {
 import { removeDatasetCiteText } from '@fastgpt/global/core/ai/llm/utils';
 import { parseReasoningContent } from '../../../utils';
 import { parsePromptToolCall } from '../../promptCall';
+import { resolveToolCallName } from './normalize';
 import type { CompleteParams, CompleteResponse } from '../types';
 
 /**
@@ -55,9 +56,13 @@ export const createCompleteResponse = async ({
         // 只接受 function tool calls，过滤掉兼容模型可能返回的 custom 等非标准类型。
         return {
           toolCalls:
-            response.choices?.[0]?.message?.tool_calls?.filter(
-              (call): call is ChatCompletionMessageToolCall => call.type === 'function'
-            ) || []
+            response.choices?.[0]?.message?.tool_calls
+              ?.filter((call): call is ChatCompletionMessageToolCall => call.type === 'function')
+              // 模型按描述中的可读名称调用时映射回 function name，无法识别的保持原样
+              .map((call) => {
+                const name = resolveToolCallName(call.function.name, tools);
+                return name ? { ...call, function: { ...call.function, name } } : call;
+              }) || []
         };
       }
 
